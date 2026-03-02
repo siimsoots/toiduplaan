@@ -5,39 +5,38 @@ import random
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Culinary Planner Pro", layout="wide")
 
-# --- VISUAL THEME (Black Background, White Sidebar) ---
+# --- VISUAL THEME (White Background, Dark Text) ---
 st.markdown("""
     <style>
-    /* Black Main Background */
+    /* White Main Background */
     .stApp {
-        background-color: #000000;
-        color: #ffffff;
+        background-color: #ffffff;
+        color: #1a1a1a;
     }
     
-    /* White Sidebar */
+    /* Sidebar Styling */
     [data-testid="stSidebar"] {
-        background-color: #ffffff !important;
-        border-right: 1px solid #333;
+        background-color: #f8f9fa !important;
+        border-right: 1px solid #ddd;
     }
     
-    /* Sidebar Text and Labels */
+    /* Ensure all text in sidebar and main area is dark */
     [data-testid="stSidebar"] .stMarkdown, 
     [data-testid="stSidebar"] label, 
     [data-testid="stSidebar"] p,
-    [data-testid="stSidebar"] h1,
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 {
+    h1, h2, h3, p, span {
         color: #1a1a1a !important;
     }
 
     /* Professional Meal Cards */
     .meal-card {
         background-color: #ffffff;
-        border-radius: 4px;
+        border-radius: 8px;
         text-align: center;
         margin-bottom: 20px;
         overflow: hidden;
-        box-shadow: 0 4px 20px rgba(255,255,255,0.05);
+        border: 1px solid #eee;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         height: 100%;
         color: #1a1a1a;
     }
@@ -66,26 +65,30 @@ st.markdown("""
         font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 2px;
-        color: #666;
+        color: #777;
         border-top: 1px solid #eee;
         padding-top: 10px;
     }
 
-    /* Buttons Style */
+    /* BUTTONS STYLING - Ensuring visibility */
     .stButton>button {
-        border-radius: 2px;
-        border: 1px solid #333;
-        font-weight: bold;
-        transition: 0.2s;
+        background-color: #ffffff !important;
+        color: #1a1a1a !important; /* Force dark text */
+        border: 1px solid #cccccc !important;
+        border-radius: 4px !important;
+        font-weight: bold !important;
+        padding: 0.5rem 1rem !important;
+        transition: all 0.2s ease;
     }
 
-    /* Sidebar buttons (Favorites list) */
-    div[data-testid="stSidebar"] .stButton>button {
-        background-color: #f8f9fa;
-        color: #1a1a1a;
-        border: 1px solid #ddd;
-        text-align: left;
-        font-size: 12px;
+    .stButton>button:hover {
+        background-color: #f0f2f6 !important;
+        border-color: #1a1a1a !important;
+    }
+
+    /* Input field text visibility */
+    input {
+        color: #1a1a1a !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -248,15 +251,13 @@ if st.session_state['selected_meal']:
             if st.button("Add to Favorites"):
                 if meal['idMeal'] not in [f['idMeal'] for f in st.session_state['favorites']]:
                     st.session_state['favorites'].append(meal)
-                    st.success("Added to favorites list!")
-                else:
-                    st.info("Already in favorites.")
+                    st.success("Saved to favorites.")
             
             if st.button("Close Selection"):
                 st.session_state['selected_meal'] = None
                 st.rerun()
         with c2:
-            st.write(f"Region: {meal.get('strArea')} | Time: {meal.get('prep_time')}")
+            st.write(f"**Region:** {meal.get('strArea')} | **Time:** {meal.get('prep_time')}")
             st.subheader("Ingredients")
             ings = [f"{meal.get(f'strMeasure{i}')} {meal.get(f'strIngredient{i}')}" for i in range(1, 21) if meal.get(f'strIngredient{i}')]
             st.write(", ".join(ings))
@@ -284,6 +285,6 @@ if st.session_state['current_pool']:
                 st.session_state['selected_meal'] = meal
                 st.rerun()
 else:
-    st.warning("No dishes found. Adjust filters or regions.")
+    st.info("No dishes found. Adjust filters or regions to see more options.")
 
-st.markdown("<br><br><p style='text-align: center; color: #444; font-size: 10px;'>Global Recipe Discovery Engine</p>", unsafe_allow_html=True)
+st.markdown("<br><br><p style='text-align: center; color: #999; font-size: 11px;'>Global Recipe Discovery Engine</p>", unsafe_allow_html=True)
