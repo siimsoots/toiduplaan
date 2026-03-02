@@ -1,188 +1,263 @@
 import streamlit as st
 import requests
 import random
-from PIL import Image
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Global Chef | Universal Recipe Engine", layout="wide", page_icon="👨‍🍳")
+st.set_page_config(page_title="Culinary Journey", layout="wide")
 
-# --- CSS STYLING ---
+# --- CUSTOM THEME & VISUALS (Cozy Red & White Sidebar) ---
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
+    /* Cozy Red Background */
+    .stApp {
+        background: linear-gradient(135deg, #7b1113 0%, #a21c1e 100%);
+        color: white;
+    }
+    
+    /* White Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff !important;
+        border-right: 1px solid #ddd;
+    }
+    
+    /* Sidebar Text Color */
+    [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] label {
+        color: #333 !important;
+    }
+
+    /* Professional Meal Cards */
     .meal-card {
         background-color: white;
-        border-radius: 15px;
-        border: 1px solid #ddd;
+        border-radius: 8px;
         text-align: center;
-        margin-bottom: 20px;
+        margin-bottom: 25px;
         overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        height: 100%;
+        color: #333;
+    }
+    
+    .meal-img { 
+        width: 100%; 
+        height: 200px; 
+        object-fit: cover; 
+    }
+    
+    .meal-info { 
+        padding: 15px; 
+    }
+    
+    .meal-title { 
+        font-family: 'Georgia', serif;
+        font-size: 18px; 
+        font-weight: bold; 
+        color: #7b1113; 
+        margin-bottom: 10px;
+        min-height: 50px;
+    }
+    
+    .tag-box {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #888;
+        border-top: 1px solid #eee;
+        padding-top: 10px;
+    }
+
+    /* Buttons */
+    .stButton>button {
+        border-radius: 4px;
+        border: none;
         transition: 0.3s;
     }
-    .meal-card:hover {
-        box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-        transform: translateY(-3px);
+    
+    /* Headers */
+    h1, h2, h3 {
+        font-family: 'Georgia', serif;
+        color: white !important;
     }
-    .meal-img { width: 100%; height: 160px; object-fit: cover; }
-    .meal-info { padding: 12px; }
-    .meal-title { font-size: 15px; font-weight: bold; height: 40px; overflow: hidden; color: #2c3e50; }
-    .user-tag { background-color: #ff4b4b; color: white; padding: 2px 6px; border-radius: 5px; font-size: 10px; }
-    .api-tag { background-color: #1a73e8; color: white; padding: 2px 6px; border-radius: 5px; font-size: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- SESSION STATE INITIALIZATION ---
-if 'user_meals' not in st.session_state: st.session_state['user_meals'] = []
-if 'current_recipe' not in st.session_state: st.session_state['current_recipe'] = None
-if 'shuffled_indices' not in st.session_state: st.session_state['shuffled_indices'] = []
+# --- SESSION STATE FOR REFRESH LOGIC ---
+if 'seen_recipes' not in st.session_state:
+    st.session_state['seen_recipes'] = set()
+if 'current_pool' not in st.session_state:
+    st.session_state['current_pool'] = []
+if 'user_recipes' not in st.session_state:
+    st.session_state['user_recipes'] = []
+if 'selected_meal' not in st.session_state:
+    st.session_state['selected_meal'] = None
 
-# --- FUNCTIONS ---
-def get_meals(areas):
-    all_meals = []
+# --- API LOGIC ---
+def fetch_all_potential_meals(areas):
+    pool = []
     for area in areas:
         url = f"https://www.themealdb.com/api/json/v1/1/filter.php?a={area}"
-        data = requests.get(url).json()
-        if data.get('meals'):
-            for m in data['meals']:
-                m['origin'] = area
-                m['is_user'] = False
-                all_meals.append(m)
-    return all_meals
+        try:
+            data = requests.get(url).json()
+            if data['meals']:
+                for m in data['meals']:
+                    m['area'] = area
+                    pool.append(m)
+        except:
+            continue
+    return pool
 
-def get_details(mid):
-    url = f"https://www.themealdb.com/api/json/v1/1/lookup.php?i={mid}"
+def get_meal_details(meal_id):
+    url = f"https://www.themealdb.com/api/json/v1/1/lookup.php?i={meal_id}"
     res = requests.get(url).json()
-    return res['meals'][0] if res.get('meals') else None
+    return res['meals'][0] if res['meals'] else None
 
-def search_meal(query):
-    url = f"https://www.themealdb.com/api/json/v1/1/search.php?s={query}"
-    res = requests.get(url).json()
-    return res['meals'] if res.get('meals') else []
+def estimate_prep_time(instructions):
+    if not instructions: return "Medium"
+    length = len(instructions)
+    if length < 500: return "Fast (< 30m)"
+    if length < 1100: return "Medium (30-60m)"
+    return "Long (1h+)"
 
-# --- SIDEBAR: ADD YOUR OWN RECIPE ---
-st.sidebar.title("✍️ My Cookbook")
-with st.sidebar.expander("➕ Add Your Own Recipe"):
-    u_name = st.text_input("Meal Name")
-    u_cat = st.selectbox("Category", ["Savory", "Dessert", "Snack"])
-    u_ins = st.text_area("Instructions")
-    u_ing = st.text_area("Ingredients (comma separated)")
-    u_img = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
+# --- SIDEBAR CONTENT ---
+with st.sidebar:
+    st.title("Menu Designer")
     
-    if st.button("Save My Recipe"):
-        if u_name and u_ins:
-            new_meal = {
-                'strMeal': u_name,
-                'strMealThumb': u_img if u_img else "https://via.placeholder.com/300?text=My+Recipe",
-                'strInstructions': u_ins,
-                'ingredients': u_ing,
-                'strCategory': u_cat,
-                'strArea': "Personal",
-                'is_user': True,
-                'idMeal': f"user_{random.randint(1000, 9999)}"
-            }
-            st.session_state['user_meals'].append(new_meal)
-            st.success("Recipe added to menu!")
-        else:
-            st.error("Please provide a name and instructions.")
+    # 1. Add Personal Recipe
+    with st.expander("Contribute a Recipe"):
+        new_name = st.text_input("Dish Name")
+        new_type = st.selectbox("Category", ["Savory", "Dessert", "Snack"])
+        new_time = st.selectbox("Time Needed", ["Fast (< 30m)", "Medium (30-60m)", "Long (1h+)"])
+        new_ins = st.text_area("Cooking Steps")
+        new_img = st.file_uploader("Dish Photo", type=["jpg", "png"])
+        
+        if st.button("Save to My Collection"):
+            if new_name and new_ins:
+                recipe = {
+                    'strMeal': new_name,
+                    'strMealThumb': new_img if new_img else "https://via.placeholder.com/300",
+                    'strInstructions': new_ins,
+                    'strCategory': new_type,
+                    'prep_time': new_time,
+                    'strArea': "Personal",
+                    'idMeal': f"custom_{random.randint(100,999)}"
+                }
+                st.session_state['user_recipes'].append(recipe)
+                st.success("Recipe saved!")
 
-# --- SIDEBAR: SETTINGS ---
-st.sidebar.title("⚙️ Filters")
-selected_areas = st.sidebar.multiselect(
-    "Regions", 
-    ["Italian", "Mexican", "Japanese", "Chinese", "French", "Indian", "Greek", "American", "British", "Thai", "Spanish"],
-    default=["Italian", "Mexican"]
-)
-meal_type = st.sidebar.radio("Type", ["Savory", "Dessert", "Snack"])
-
-# --- MAIN PAGE ---
-st.title("🌎 Universal Meal Planner")
-
-# Search & Refresh Row
-col_search, col_ref = st.columns([3, 1])
-with col_search:
-    query = st.text_input("🔍 Search for any dish globally (e.g. 'Pasta', 'Curry', 'Cake')...")
-with col_ref:
-    st.write(" ") # alignment
-    refresh = st.button("🔄 Refresh & Discover", use_container_width=True)
-
-# 1. DATA PROCESSING
-display_list = []
-
-if query:
-    # Use Search Results
-    search_results = search_meal(query)
-    for m in search_results:
-        m['is_user'] = False
-        m['origin'] = m.get('strArea', 'World')
-        display_list.append(m)
-else:
-    # Use Region + User Meals
-    api_meals = get_meals(selected_areas)
-    # Combine with user-added meals
-    all_combined = st.session_state['user_meals'] + api_meals
+    st.divider()
     
-    # Filter by category (User meals have category, API meals need details fetch)
-    filtered = []
-    for m in all_combined:
-        if m['is_user']:
-            if m['strCategory'] == meal_type: filtered.append(m)
-        else:
-            filtered.append(m) # We filter API meals after shuffle for performance
+    # 2. Filters
+    st.subheader("Preferences")
+    selected_areas = st.multiselect(
+        "Cuisine Origin",
+        ["Italian", "Mexican", "Japanese", "Chinese", "French", "Indian", "Greek", "American", "British", "Thai", "Spanish", "Moroccan"],
+        default=["Italian", "Mexican", "French"]
+    )
     
-    # SHUFFLE LOGIC: If refresh or first run, pick 12 random items
-    if refresh or not st.session_state['shuffled_indices']:
-        random.shuffle(filtered)
-        display_list = filtered[:20]
+    selected_type = st.radio("Course Type", ["Savory", "Dessert", "Snack"])
+    
+    selected_speeds = st.multiselect(
+        "Preparation Time",
+        ["Fast (< 30m)", "Medium (30-60m)", "Long (1h+)"],
+        default=["Fast (< 30m)", "Medium (30-60m)", "Long (1h+)"]
+    )
+
+# --- MAIN INTERFACE ---
+st.title("The Culinary Planner")
+st.write("Browse unique recipes from around the world. Every refresh brings new inspiration.")
+
+# Search and Refresh functionality
+col_a, col_b = st.columns([3, 1])
+with col_a:
+    search_q = st.text_input("Search the entire global database (e.g. 'Salmon', 'Pasta', 'Curry')...")
+with col_b:
+    st.write(" ")
+    refresh_clicked = st.button("Generate New Menu", use_container_width=True)
+
+# LOGIC: Fetching and Novelty filtering
+if refresh_clicked or not st.session_state['current_pool']:
+    new_display_list = []
+    
+    if search_q:
+        search_url = f"https://www.themealdb.com/api/json/v1/1/search.php?s={search_q}"
+        search_res = requests.get(search_url).json()
+        raw_list = search_res['meals'] if search_res['meals'] else []
     else:
-        display_list = filtered[:20]
+        # Get all meals from API for selected areas + personal recipes
+        raw_list = st.session_state['user_recipes'] + fetch_all_potential_meals(selected_areas)
+        random.shuffle(raw_list)
 
-# 2. ACTIVE RECIPE DISPLAY
-if st.session_state['current_recipe']:
-    r = st.session_state['current_recipe']
-    with st.expander("📖 VIEWING RECIPE: " + r['strMeal'], expanded=True):
-        c1, c2 = st.columns([1, 1.2])
+    # Filtering for novelty and criteria
+    for m in raw_list:
+        if m['idMeal'] in st.session_state['seen_recipes'] and not search_q:
+            continue # Skip if already seen recently
+        
+        # Get full details
+        if 'strInstructions' not in m: # If it's from API and we don't have details yet
+            det = get_meal_details(m['idMeal'])
+            if not det: continue
+            m.update(det)
+
+        # Apply Filters
+        cat = m.get('strCategory', '')
+        if selected_type == "Dessert" and cat != "Dessert": continue
+        if selected_type == "Snack" and cat not in ["Side", "Starter"]: continue
+        if selected_type == "Savory" and cat in ["Dessert", "Side", "Starter"]: continue
+        
+        m['prep_time'] = estimate_prep_time(m.get('strInstructions', ''))
+        if m['prep_time'] not in selected_speeds: continue
+        
+        new_display_list.append(m)
+        st.session_state['seen_recipes'].add(m['idMeal'])
+        
+        if len(new_display_list) >= 12: break # Show 12 items
+
+    st.session_state['current_pool'] = new_display_list
+
+# DISPLAY: Selected Recipe Detail
+if st.session_state['selected_meal']:
+    meal = st.session_state['selected_meal']
+    with st.container():
+        st.markdown(f"### {meal['strMeal']}")
+        c1, c2 = st.columns([1, 2])
         with c1:
-            if isinstance(r['strMealThumb'], str):
-                st.image(r['strMealThumb'], use_container_width=True)
-            else:
-                st.image(r['strMealThumb'], use_container_width=True)
+            st.image(meal['strMealThumb'], use_container_width=True)
         with c2:
-            st.header(r['strMeal'])
-            st.write(f"**Origin:** {r.get('strArea')} | **Source:** {'User' if r['is_user'] else 'TheMealDB'}")
-            st.subheader("Instructions")
-            st.write(r['strInstructions'])
+            st.write(f"**Origin:** {meal.get('strArea')} | **Time:** {meal.get('prep_time')}")
+            st.write("**Ingredients:**")
+            # Cleaning ingredients list
+            ing_list = []
+            for i in range(1, 21):
+                ing = meal.get(f'strIngredient{i}')
+                if ing: ing_list.append(ing)
+            st.write(", ".join(ing_list))
+            st.write("**Preparation:**")
+            st.write(meal.get('strInstructions'))
             if st.button("Close Recipe"):
-                st.session_state['current_recipe'] = None
+                st.session_state['selected_meal'] = None
                 st.rerun()
+    st.divider()
 
-st.divider()
-
-# 3. VISUAL GRID
-if display_list:
+# DISPLAY: The Menu Grid
+if st.session_state['current_pool']:
     cols = st.columns(4)
-    for idx, meal in enumerate(display_list):
+    for idx, meal in enumerate(st.session_state['current_pool']):
         with cols[idx % 4]:
-            tag = '<span class="user-tag">PERSONAL</span>' if meal['is_user'] else f'<span class="api-tag">{meal["origin"]}</span>'
-            
             st.markdown(f"""
                 <div class="meal-card">
-                    <div class="meal-info" style="position:absolute; padding:5px;">{tag}</div>
+                    <img src="{meal['strMealThumb']}" class="meal-img">
+                    <div class="meal-info">
+                        <div class="meal-title">{meal['strMeal']}</div>
+                        <div class="tag-box">
+                            {meal.get('strArea')} &middot; {meal.get('prep_time')}
+                        </div>
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
-            
-            # Image handling for both URLs and Uploads
-            if isinstance(meal['strMealThumb'], str):
-                st.image(meal['strMealThumb'], use_container_width=True)
-            else:
-                st.image(meal['strMealThumb'], use_container_width=True)
-            
-            st.markdown(f'<div class="meal-title">{meal["strMeal"]}</div>', unsafe_allow_html=True)
-            
-            if st.button("View Details", key=meal['idMeal'], use_container_width=True):
-                if meal['is_user']:
-                    st.session_state['current_recipe'] = meal
-                else:
-                    st.session_state['current_recipe'] = get_details(meal['idMeal'])
+            if st.button("View Full Recipe", key=meal['idMeal'], use_container_width=True):
+                st.session_state['selected_meal'] = meal
                 st.rerun()
 else:
-    st.warning("No recipes found. Try clicking 'Refresh' or changing your filters.")
+    st.info("Try selecting more regions or reset filters to see more dishes.")
+
+# Footer
+st.markdown("<br><hr><center>Global Culinary Database Access</center>", unsafe_allow_html=True)
